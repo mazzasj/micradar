@@ -39,22 +39,17 @@ def good_checksum(packet): #check if the checksum is correct
 
 
 def human_presence_switch(x):
+    human_presence = bytearray([0x80] + [0x00] + [0x00] + [0x01])
     if x == 1:
-        human_presence_enable = bytearray([0x80] + [0x00] + [0x00] + [0x01] + [0x01]) #last bit turns on detection reports
-        checksum_calc(human_presence_enable)
-        uart.write(human_presence_enable)
+        human_presence.append(0x01)
+        send(human_presence)
     else:
-        human_presence_disable = bytearray([0x80] + [0x00] + [0x00] + [0x01] + [0x00]) #last bit turns on detection reports
-        checksum_calc(human_presence_disable)
-        uart.write(human_presence_disable)
+        human_presence.append(0x00)
+        send(human_presence)
 
 def send(packet):
     checksum_calc(packet)
     uart.write(packet)
-
-checksum_calc(hb_query) #append checksum to packet
-
-good_checksum(hb_query)
 
 
 
@@ -62,10 +57,9 @@ responses = set()
 frame_buffer = []
 time_last = 0
 
+human_presence_switch(0)
 
 time.sleep(1)
-
-human_presence_switch(0)
 
 while True:
     # Wait for a response
