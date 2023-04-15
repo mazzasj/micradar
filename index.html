@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baby Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
+    <style>
+        canvas { max-width: 100%; }
+    </style>
+</head>
+<body>
+    <h1>Baby Monitor</h1>
+    <canvas id="sensorDataChart"></canvas>
+
+    <script>
+        const socket = io();
+        const ctx = document.getElementById('sensorDataChart').getContext('2d');
+        const sensorDataChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Heart Rate',
+                        data: [],
+                        borderColor: 'rgba(255, 0, 0, 1)',
+                        yAxisID: 'y1',
+                    },
+                    {
+                        label: 'Respiration',
+                        data: [],
+                        borderColor: 'rgba(0, 0, 255, 1)',
+                        yAxisID: 'y2',
+                    },
+                ],
+            },
+            options: {
+                scales: {
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                    },
+                    y2: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    },
+                },
+            },
+        });
+
+        socket.on('new_sensor_data', (sensor_data) => {
+            sensorDataChart.data.labels.push(sensor_data.timestamp);
+            sensorDataChart.data.datasets[0].data.push(sensor_data.heart_rate);
+            sensorDataChart.data.datasets[1].data.push(sensor_data.respiration);
+            sensorDataChart.update();
+        });
+    </script>
+</body>
+</html>
