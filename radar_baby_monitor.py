@@ -4,6 +4,13 @@ import threading
 import queue
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
+from collections import deque
+
+# Max number of data points to store
+MAX_DATA_POINTS = 60 * 2
+
+# Create a deque with a max size to limit stored data
+sensor_data_buffer = deque(maxlen=MAX_DATA_POINTS)
 
 # Flask + SocketIO initialization
 app = Flask(__name__)
@@ -56,7 +63,6 @@ def human_presence_switch(x):
     send(human_presence)
 
 def send(packet):
-    #checksum_calc(packet)
     ser.write(packet)
     print("sent", list(map(hex, packet)))
 
@@ -99,7 +105,7 @@ def sensor_data_emitter():
     while True:
         if not packet_queue.empty():
             packet = packet_queue.get()
-            now = time.perf_counter_ns()
+            now = int(time.perf_counter_ns() / 1000000)
             good_packet = good_checksum(packet)
             if good_packet == True:
                 packet_data = get_packet_data(packet)
@@ -116,8 +122,10 @@ def sensor_data_emitter():
                         }
                     else:
                         continue
+                    # Add new sensor data to the buffer, removing oldest if full
+                    sensor_data_buffer.append(sensor_data)
                     socketio.emit('new_sensor_data', sensor_data)
-        time.sleep(0.02)
+        time.sleep(0.05)
 
 def destroy():
     ser.close ()                                          # Closes the serial port
