@@ -28,6 +28,21 @@ ser.flushOutput()                                      # clear the UART output b
 # Create a Queue object to allow communication between threads
 packet_queue = queue.Queue()
 
+# Using the GPIO numbers not the pin numbers
+GPIO.setmode(GPIO.BCM)
+
+# Set up GPIO 26 as an input, pulled up to avoid false detection
+GPIO.setup(26, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+# Set up GPIO 13 as PWM output for buzzer
+GPIO.setup(13, GPIO.OUT)
+buzzer = GPIO.PWM(13, 100)  # Initialize PWM at 100Hz
+
+# Set up GPIO 5 & 6 as output LEDs
+GPIO.setup(5, GPIO.OUT) # Green
+GPIO.setup(6, GPIO.OUT) # Red
+
+
 def checksum_calc(packet): #calculate the checksum of the packet and add it to the end of the packet
     header = bytearray([0x53] + [0x59])
     packet[0:0] = header #add header to the beginning of the packet so it can be evaluated
@@ -77,7 +92,20 @@ def get_packet_data(packet): #strips packet headers and returns the first 2 pack
     packet_data.append(clean_packet[1])
     packet_data.append(clean_packet[-1])
     return packet_data
-
+    
+def sound_alarm():
+    GPIO.output(5, GPIO.LOW) # Green off
+    GPIO.output(6, GPIO.HIGH) # Red on
+    for _ in range(5):  # Repeat the frequency cycle 5 times
+        for freq in range(100, 5100, 50):  # freq range and step
+            # Change the frequency of the PWM signal
+            buzzer.ChangeFrequency(freq)
+            buzzer.start(50)  # Start (or continue) the buzzer with 50% duty cycle
+            time.sleep(0.02)
+            if GPIO.input(26) == 1:
+                buzzer.stop()
+                break     
+    
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -100,8 +128,22 @@ def get_packet():
                         packet_queue.put(packet) #shares packet data with the main program
                         packet_buffer.clear()
                         break
+                        
+def indicator_lights(*args):
+    if GPIO.input(26) != 1:
+        GPIO.output(5, GPIO.HIGH) # Green on
+        GPIO.output(6, GPIO.LOW) # Red off
+    else:
+        GPIO.output(5, GPIO.LOW) # Green off
+        GPIO.output(6, GPIO.HIGH) # Red on
+        
+# Detect both falling and rising edges on GPIO 26 and assign different callback functions
+GPIO.add_event_detect(26, GPIO.BOTH, callback=indicator_lights, bouncetime=200)
+
 
 def sensor_data_emitter():
+    alarm_status = 0
+    
     while True:
         if not packet_queue.empty():
             packet = packet_queue.get()
@@ -120,19 +162,31 @@ def sensor_data_emitter():
                             'respiration': packet_data[2],
                             'timestamp': now
                         }
+                        if packet_data[-1] == 128 and GPIO.input(26) != 1:
+                            alarm_status += 1
+                        else:
+                            if alarm_status > 1:
+                                alarm_status -= 2
+                        if alarm_status > 100:
+                            sound_alarm()
+                        print("alarm status: ", alarm_status)
                     else:
                         continue
                     # Add new sensor data to the buffer, removing oldest if full
                     sensor_data_buffer.append(sensor_data)
                     socketio.emit('new_sensor_data', sensor_data)
+                #print("data: ",list(map(hex, packet_data))) # data debug
         time.sleep(0.05)
 
 def destroy():
-    ser.close ()                                          # Closes the serial port
+    ser.close ()   # Closes the serial port
     print ("Serial connection closed")
 
 if __name__ == '__main__':
     try:
+        # set indicator LEDs to match switch position
+        indicator_lights()
+        
         #Initialize data stream
         human_presence_switch(1)
         hb_query = bytearray([0x01] + [0x01] + [0x00] + [0x01] + [0x0F])
@@ -150,6 +204,8 @@ if __name__ == '__main__':
         # run flask app
         socketio.run(app, host="0.0.0.0", port=5000, debug=False)
     except KeyboardInterrupt:
+        GPIO.cleanup()
         destroy()
     finally:
+        GPIO.cleanup()
         destroy()
